@@ -60,10 +60,37 @@
   .back,.front,.sealed{
     -webkit-mask-image:linear-gradient(90deg,#0000,#000 5%,#000 95%,#0000),linear-gradient(#0000,#000 3%,#000 97%,#0000);-webkit-mask-composite:source-in;
     mask-image:linear-gradient(90deg,#0000,#000 5%,#000 95%,#0000),linear-gradient(#0000,#000 3%,#000 97%,#0000);mask-composite:intersect}
+  /* music: a little pill under the card that fades in as the card comes out */
+  .music{position:fixed;z-index:10;left:0;right:0;bottom:16px;margin:0 auto;width:max-content;max-width:calc(100% - 32px);
+    display:flex;align-items:center;gap:10px;padding:3px 6px 3px 3px;border-radius:999px;
+    background:rgba(255,250,242,.92);border:1px solid rgba(140,22,32,.14);box-shadow:0 6px 20px rgba(92,38,20,.16);
+    color:#8c1620;font:italic 15px/1.25 Georgia,'Times New Roman',serif;
+    opacity:0;visibility:hidden;transform:translateY(12px);transition:opacity .6s ease 2.6s,transform .6s ease 2.6s,visibility 0s 2.6s}
+  .music.on{opacity:1;visibility:visible;transform:none}
+  .music button{flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:none;color:inherit;cursor:pointer}
+  .music button:focus-visible{outline:2px solid #8c1620;outline-offset:2px}
+  .music svg{display:block;fill:currentColor}
+  .play,.play svg{width:44px;height:44px}
+  .play .disc{fill:#8c1620}
+  .play path{fill:#fdf3e3}
+  /* the ring round the play button fills up as the song plays (128.8 = its circumference) */
+  .play .groove,.play .arc{fill:none;stroke-width:2}
+  .play .groove{stroke:rgba(140,22,32,.16)}
+  .play .arc{stroke:#8c1620;stroke-dasharray:128.8;stroke-dashoffset:128.8;transition:stroke-dashoffset .3s linear}
+  .music .pause-i,.music.playing .play-i{display:none}
+  .music.playing .pause-i{display:inline}
+  .next{width:36px;height:36px}
+  .next svg{width:22px;height:22px}
+  .song{min-width:0}
+  .song:last-child{padding-right:14px}
+  .song span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .song span+span{font:10.5px/1.45 Georgia,'Times New Roman',serif;letter-spacing:.12em;text-transform:uppercase;opacity:.75}
+
   @media (prefers-reduced-motion:reduce){
     .ring{animation:none;opacity:0}
     .open .card{animation:none;transform:none;z-index:5}
     .open .back,.open .front{animation:none;opacity:0}
+    .music{transition:none;transform:none}
   }
 
 </style>
@@ -77,21 +104,84 @@
     <span class="ring"></span>
   </main>
 
+  <div class="music" id="music" role="group" aria-label="Música · Music">
+    <button class="play" id="play" type="button" aria-label="Reproducir música · Play music">
+      <svg viewBox="0 0 44 44" aria-hidden="true">
+        <circle class="groove" cx="22" cy="22" r="20.5"/>
+        <circle class="arc" id="arc" cx="22" cy="22" r="20.5" transform="rotate(-90 22 22)"/>
+        <circle class="disc" cx="22" cy="22" r="17"/>
+        <path class="play-i" d="M18.5 15v14l11-7z"/>
+        <path class="pause-i" d="M16.5 15h4v14h-4zM23.5 15h4v14h-4z"/>
+      </svg>
+    </button>
+    <div class="song"><span id="title"></span><span id="artist"></span></div>
+    <button class="next" id="next" type="button" aria-label="Siguiente canción · Next song">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6.5v11l8.5-5.5zM15.5 6.5h2.2v11h-2.2z"/></svg>
+    </button>
+  </div>
+  <audio id="audio" preload="none"></audio>
+
 <script>
+  // The songs play in this order, then loop. Put the files in music/ and list them here.
+  var SONGS=[
+    {src:'music/cancion-1.mp3', title:'Nombre de la canción', artist:'Artista'},
+    {src:'music/cancion-2.mp3', title:'Otra canción', artist:'Otro artista'}
+  ];
+
   (function(){
-    var s=document.getElementById('stage');
+    var s=document.getElementById('stage'),m=document.getElementById('music'),a=document.getElementById('audio'),
+      play=document.getElementById('play'),next=document.getElementById('next'),arc=document.getElementById('arc'),
+      n=0,started=false,resume=false;
     function go(){
       s.classList.add('open');
+      if(SONGS.length) m.classList.add('on');
       // once open it is just a picture, so let screen readers reach the card's alt text
       s.removeAttribute('role'); s.removeAttribute('aria-label'); s.removeAttribute('tabindex');
     }
     function open(){
+      // browsers only allow sound that a tap starts, so the music has to start in the opening tap itself, not after the wait below
+      if(!started&&SONGS.length){ started=true; start(); }
       // an early tap waits for all the art (window load) so it never animates half-loaded images.
       // ponytail: not img.decode(), which can hang forever when the page isn't painting
       if(document.readyState==='complete') go(); else addEventListener('load',go);
     }
     s.addEventListener('click',open);
     s.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); open(); } });
+
+    function load(i){
+      n=(i+SONGS.length)%SONGS.length;
+      var song=SONGS[n];
+      a.src=song.src;
+      document.getElementById('title').textContent=song.title;
+      document.getElementById('artist').textContent=song.artist;
+      arc.style.strokeDashoffset='';
+      // what the phone's lock screen / notification shows
+      if('mediaSession' in navigator) navigator.mediaSession.metadata=new MediaMetadata({title:song.title,artist:song.artist,
+        album:'Gabrielle & Ernesto · 5 de junio de 2027',artwork:[{src:'images/save-card-final.webp',sizes:'2120x2968',type:'image/webp'}]});
+    }
+    // if a browser still says no, the play button is right there
+    function start(){ var p=a.play(); if(p) p.catch(function(){}); }
+    function skip(d){ load(n+d); start(); }
+
+    if(!SONGS.length) return;
+    load(0);
+    if(SONGS.length<2){ next.remove(); a.loop=true; }
+    else{
+      next.addEventListener('click',function(){ skip(1); });
+      a.addEventListener('ended',function(){ skip(1); });
+      if('mediaSession' in navigator) try{
+        navigator.mediaSession.setActionHandler('nexttrack',function(){ skip(1); });
+        navigator.mediaSession.setActionHandler('previoustrack',function(){ skip(-1); });
+      }catch(e){}
+    }
+    play.addEventListener('click',function(){ if(a.paused) start(); else a.pause(); });
+    a.addEventListener('play',function(){ m.classList.add('playing'); play.setAttribute('aria-label','Pausar música · Pause music'); });
+    a.addEventListener('pause',function(){ m.classList.remove('playing'); play.setAttribute('aria-label','Reproducir música · Play music'); });
+    a.addEventListener('timeupdate',function(){ if(a.duration) arc.style.strokeDashoffset=128.8*(1-a.currentTime/a.duration); });
+    // pause when they leave (back to WhatsApp, screen locked) and carry on when they come back
+    document.addEventListener('visibilitychange',function(){
+      if(document.hidden){ resume=!a.paused; a.pause(); } else if(resume) start();
+    });
   })();
 </script>
 </body>
